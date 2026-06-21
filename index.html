@@ -65,16 +65,13 @@
   }
   #video.mirror { transform: scaleX(-1); }
 
-  /* live grade overlay — CSS only, 60fps safe */
+  /* live grade overlay — neutral, very subtle for outdoor */
   .live-grade {
     position: absolute; inset: 0; pointer-events: none;
-    /* warm cast */
     background:
       radial-gradient(ellipse 110% 110% at 50% 50%,
-        rgba(255,160,40,.04) 0%,
-        rgba(0,0,0,0) 60%,
-        rgba(0,0,0,.50) 100%),
-      linear-gradient(180deg, rgba(255,130,20,.03) 0%, rgba(20,30,50,.04) 100%);
+        rgba(0,0,0,0) 55%,
+        rgba(0,0,0,.22) 100%);
   }
 
   /* viewfinder corner brackets */
@@ -244,46 +241,50 @@
 "use strict";
 
 /* ─────────────────────────────────────────────
-   HARDCODED LOOK — Kodak FunSaver / ISO 800
-   Based on: warm reds/yellows, black lift,
-   flash bloom, halation, green-teal shadows,
-   heavy grain (ISO 800 character), vignette,
-   chromatic aberration (plastic lens).
-   No user-facing controls.
+   HARDCODED LOOK — Outdoor film, DazCam-style
+   Natural/cool tone, subtle grain, minimal
+   vignette, no flash bloom. Calibrated for
+   daylight outdoor shooting.
 ───────────────────────────────────────────── */
 const LOOK = {
-  // Basic tonal adjustments (Lightroom-equivalent intent)
-  exposure:    0.08,   // very slight lift (flash scene)
-  contrast:    0.22,   // punchy contrast
-  saturation:  0.20,   // Kodak vivid colours
-  warmth:      28,     // additive R, subtractive B — yellow/orange push
+  // Exposure — outdoor is already bright, don't lift
+  exposure:    0.00,
 
-  // Black lift — "faded" matte look (Lightroom: lift bottom of point curve)
-  blackLift:   18,     // blacks → soft grey floor (0 = none, 255 = max)
+  // Contrast — film has gentle S-curve, not punchy
+  contrast:    0.10,
 
-  // Split-tone: highlights warm, shadows green-teal (film C-41 character)
-  hlWarm:      0.06,   // additive orange in highlights (luma > 160)
-  shGreen:     0.04,   // additive green-teal in shadows (luma < 80)
+  // Saturation — very slight desaturate (film mutes colours slightly)
+  saturation:  -0.08,
 
-  // Grain — ISO 800 film, coarse luminance grain
-  grain:       34,
+  // Warmth — near-zero, outdoor daylight is neutral-cool
+  warmth:      6,
 
-  // Vignette intensity (0–1)
-  vignette:    0.62,
+  // Black lift — very subtle faded look, not washed out
+  blackLift:   10,
 
-  // Chromatic aberration — plastic lens fringing (pixels, edge-weighted)
-  ca:          2.5,
+  // Split-tone — barely perceptible (reference photo has very subtle teal shadows)
+  hlWarm:      0.015,  // tiny warm highlight nudge
+  shGreen:     0.025,  // very subtle teal in shadows
 
-  // Light leak — probability per shot, direction random
-  leakProb:    0.40,
+  // Grain — fine, like ISO 400 outdoor film
+  grain:       18,
 
-  // Halation radius ratio (light bleed around bright areas)
-  halation:    true,
+  // Vignette — barely there, just natural lens falloff
+  vignette:    0.28,
+
+  // Chromatic aberration — plastic lens fringing, kept subtle
+  ca:          2.0,
+
+  // Light leak — rare, very faint
+  leakProb:    0.12,
+
+  // Halation — off for outdoor (reference photo has none)
+  halation:    false,
 
   // Date stamp
   dateStamp:   true,
 
-  // Output resolution long-edge (px) — 1080 keeps file small, good for web
+  // Output resolution long-edge (px)
   outputSize:  1080,
 };
 
@@ -379,11 +380,8 @@ function processFrame(src, sw, sh, mirror) {
   /* ── halation (light bleed around bright areas) ── */
   if (LOOK.halation) applyHalation(ctx, w, h);
 
-  /* ── light leak (random) ── */
+  /* ── light leak (random, rare for outdoor) ── */
   if (Math.random() < LOOK.leakProb) applyLightLeak(ctx, w, h);
-
-  /* ── flash bloom (centre bright wash) ── */
-  applyFlashBloom(ctx, w, h);
 
   /* ── date stamp ── */
   if (LOOK.dateStamp) applyDateStamp(ctx, w, h);
@@ -475,14 +473,17 @@ function applyPixelGrade(imgData, w, h) {
   }
 }
 
-/* ─── vignette ─── */
+/* ─── vignette — natural lens falloff, very subtle ─── */
 function applyVignette(ctx, w, h) {
-  ctx.globalCompositeOperation = "multiply";
   const v = LOOK.vignette;
-  const g = ctx.createRadialGradient(w/2, h/2, Math.min(w,h)*0.28, w/2, h/2, Math.max(w,h)*0.70);
-  const floor = Math.round(255 * (1 - v));
+  // Use "multiply" but with a much larger inner radius so centre stays natural
+  ctx.globalCompositeOperation = "multiply";
+  const inner = Math.min(w, h) * 0.55;   // large clear centre
+  const outer = Math.max(w, h) * 0.85;   // gradual falloff to edges
+  const g = ctx.createRadialGradient(w/2, h/2, inner, w/2, h/2, outer);
+  const floor = Math.round(255 * (1 - v * 0.7));
   g.addColorStop(0, "rgba(255,255,255,1)");
-  g.addColorStop(1, `rgb(${floor},${floor},${Math.round(floor*0.9)})`);
+  g.addColorStop(1, `rgb(${floor},${floor},${floor})`);
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, w, h);
   ctx.globalCompositeOperation = "source-over";
