@@ -54,10 +54,13 @@
 
   /* ── viewfinder ── */
   .stage {
-    flex: 1; position: relative; margin: 0 14px;
+    flex-shrink: 0; position: relative; margin: 0 14px;
     border-radius: 10px; overflow: hidden;
     background: #000; border: 1px solid var(--frame);
-    min-height: 0;
+    aspect-ratio: 4 / 5;
+    max-height: calc(100dvh - 180px);
+    align-self: center;
+    width: calc(100% - 28px);
   }
   #video {
     position: absolute; inset: 0; width: 100%; height: 100%;
@@ -350,22 +353,27 @@ function triggerFlash(cb) {
 function processFrame(src, sw, sh, mirror) {
   if (!sw || !sh) { busy = false; return; }
 
-  /* canvas at output resolution */
-  const long = LOOK.outputSize;
-  let w, h;
-  if (sw >= sh) { w = long; h = Math.round(long * sh / sw); }
-  else          { h = long; w = Math.round(long * sw / sh); }
+  /* canvas locked to 4:5 — crop-to-fit from sensor */
+  const long = LOOK.outputSize;   // long edge = height (portrait 4:5)
+  const w = Math.round(long * 4 / 5);
+  const h = long;
 
   const c = document.createElement("canvas");
   c.width = w; c.height = h;
   const ctx = c.getContext("2d");
 
-  /* draw — cover-crop + mirror front cam */
+  /* cover-crop source into 4:5 canvas + mirror front cam */
   if (mirror) { ctx.translate(w, 0); ctx.scale(-1, 1); }
-  const ar = w / h, sar = sw / sh;
+  const targetAR = w / h;          // 4/5 = 0.8
+  const srcAR    = sw / sh;
   let dw, dh, dx, dy;
-  if (sar > ar) { dh = h; dw = h * sar; dx = (w - dw) / 2; dy = 0; }
-  else          { dw = w; dh = w / sar; dx = 0; dy = (h - dh) / 2; }
+  if (srcAR > targetAR) {
+    // source is wider — fit height, crop sides
+    dh = h; dw = h * srcAR; dx = (w - dw) / 2; dy = 0;
+  } else {
+    // source is taller — fit width, crop top/bottom
+    dw = w; dh = w / srcAR; dx = 0; dy = (h - dh) / 2;
+  }
   ctx.drawImage(src, dx, dy, dw, dh);
   ctx.setTransform(1, 0, 0, 1, 0, 0);
 
