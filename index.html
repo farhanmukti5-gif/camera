@@ -65,7 +65,14 @@
   #video {
     position: absolute; inset: 0; width: 100%; height: 100%;
     object-fit: cover;
+    /* hide ALL native browser/iOS media controls */
+    pointer-events: none;
   }
+  #video::-webkit-media-controls            { display: none !important; }
+  #video::-webkit-media-controls-enclosure  { display: none !important; }
+  #video::-webkit-media-controls-panel      { display: none !important; }
+  #video::-webkit-media-controls-play-button { display: none !important; }
+  #video::-webkit-media-controls-overlay-play-button { display: none !important; }
   #video.mirror { transform: scaleX(-1); }
 
   /* live grade overlay — neutral, very subtle for outdoor */
@@ -121,6 +128,15 @@
     padding: 16px 18px calc(16px + env(safe-area-inset-bottom));
     display: flex; align-items: center; justify-content: space-between;
   }
+  .vf-flip {
+    position: absolute; top: 10px; right: 10px; z-index: 10;
+    width: 36px; height: 36px; border-radius: 10px;
+    background: rgba(30,34,40,0.65); border: 1px solid rgba(255,255,255,0.15);
+    color: var(--text); font-size: 16px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    backdrop-filter: blur(4px);
+  }
+  .vf-flip:active { background: rgba(50,55,62,0.85); }
   .iconbtn {
     width: 52px; height: 52px; border-radius: 14px;
     background: var(--body2); border: 1px solid var(--frame);
@@ -128,6 +144,9 @@
     font-size: 20px; cursor: pointer;
   }
   .iconbtn:active { background: #2a2e33; }
+  .iconbtn.flash-on  { background: #f5c518; color: #1a1a1a; border-color: #f5c518; }
+  .iconbtn.flash-off { opacity: 1; }
+  .iconbtn.flash-na  { opacity: 0.35; cursor: not-allowed; }
   .shutter-wrap { display: flex; flex-direction: column; align-items: center; gap: 4px; }
   .shutter {
     width: 74px; height: 74px; border-radius: 50%;
@@ -193,11 +212,12 @@
 
   <!-- viewfinder -->
   <div class="stage">
-    <video id="video" playsinline autoplay muted></video>
+    <video id="video" playsinline autoplay muted disablepictureinpicture disableremoteplayback webkit-playsinline x-webkit-airplay="deny"></video>
     <div class="live-grade"></div>
     <div class="vf-corners"></div>
     <div class="vf-corners2"></div>
     <div class="flash-overlay" id="flashEl"></div>
+    <button class="vf-flip" id="btnFlip" title="Ganti kamera">⟳</button>
 
     <div class="state show" id="stateLoading">
       <h3>Menyalakan kamera…</h3>
@@ -219,13 +239,14 @@
 
   <!-- controls -->
   <div class="controls">
-    <button class="iconbtn" id="btnFlip" title="Ganti kamera">⟳</button>
+    <button class="iconbtn flash-off" id="btnFlash" title="Flash">⚡</button>
     <div class="shutter-wrap">
       <button class="shutter" id="btnShutter"></button>
       <span class="shutter-lbl">shoot</span>
     </div>
     <button class="iconbtn" id="btnGallery" title="Galeri">▦</button>
   </div>
+  <!-- swap btnFlip to top-right corner of viewfinder -->
 
   <!-- photo modal -->
   <div class="modal" id="modal">
@@ -257,14 +278,14 @@
 ───────────────────────────────────────────── */
 const LOOK = {
   // ──── TONE & EXPOSURE ────
-  exposure:     0.01,   // overall brightness: -0.5 to +0.5
-  highlights:   0.01,   // bright area boost: -0.3 to +0.3
+  exposure:     0.00,   // overall brightness: -0.5 to +0.5
+  highlights:   0.00,   // bright area boost: -0.3 to +0.3
   shadows:      0.00,   // dark area boost: -0.3 to +0.3
   fade:         0.00,   // wash out whites: 0 to 1.0
-  contrast:     0.10,   // perbedaan gelap terang: -0.5 to +0.5
+  contrast:     0.10,
 
   // ──── COLOR ────
-  saturation:   0.08,   // -0.5 to +0.5
+  saturation:  -0.08,
   warmth:       6,      // -50 to +50, warm=orange, cool=blue
   tint:         0.00,   // color cast: -1 to +1 (magenta to green)
   tintColor:    'none', // 'none', 'magenta', 'cyan', 'yellow', 'green'
@@ -314,10 +335,15 @@ const LOOK = {
 
 /* ─── state ─── */
 const TOTAL = 24;
-let photos   = [];
+let photos     = [];
 let facingMode = "environment";
-let stream   = null;
-let busy     = false;
+let stream     = null;
+let busy       = false;
+
+/* flash state */
+let flashMode      = "off";   // "off" | "on" | "unavailable"
+let imageCapture   = null;    // ImageCapture API object
+let torchSupported = false;
 
 const video    = document.getElementById("video");
 const flashEl  = document.getElementById("flashEl");
@@ -338,6 +364,22 @@ async function startCamera() {
     await video.play();
     hideState("stateLoading");
     hideState("stateError");
+
+    /* detect torch support on this camera */
+    torchSupported = false;
+    imageCapture   = null;
+    flashMode      = "off";
+    try {
+      const track = stream.getVideoTracks()[0];
+      if (track) {
+        const caps = track.getCapabilities ? track.getCapabilities() : {};
+        if (caps.torch) {
+          torchSupported = true;
+          imageCapture   = new ImageCapture(track);
+        }
+      }
+    } catch(e) { /* ImageCapture not supported */ }
+    updateFlashBtn();
   } catch (e) {
     hideState("stateLoading");
     document.getElementById("errMsg").textContent =
@@ -364,10 +406,50 @@ function capture() {
 
 function triggerFlash(cb) {
   flashEl.className = "flash-overlay pop";
-  setTimeout(() => {
-    flashEl.className = "flash-overlay fade";
-    cb();
-  }, 90);
+
+  if (flashMode === "on" && torchSupported) {
+    /* torch on → capture → torch off */
+    const track = stream.getVideoTracks()[0];
+    track.applyConstraints({ advanced: [{ torch: true }] })
+      .then(() => {
+        setTimeout(() => {
+          cb();
+          flashEl.className = "flash-overlay fade";
+          setTimeout(() => {
+            track.applyConstraints({ advanced: [{ torch: false }] }).catch(() => {});
+          }, 300);
+        }, 90);
+      })
+      .catch(() => {
+        /* torch failed, continue anyway */
+        setTimeout(() => { flashEl.className = "flash-overlay fade"; cb(); }, 90);
+      });
+  } else {
+    setTimeout(() => {
+      flashEl.className = "flash-overlay fade";
+      cb();
+    }, 90);
+  }
+}
+
+/* update flash button appearance */
+function updateFlashBtn() {
+  const btn = document.getElementById("btnFlash");
+  if (!btn) return;
+  btn.classList.remove("flash-on", "flash-off", "flash-na");
+  if (!torchSupported) {
+    btn.classList.add("flash-na");
+    btn.title = "Flash tidak tersedia di perangkat ini";
+    btn.textContent = "⚡";
+  } else if (flashMode === "on") {
+    btn.classList.add("flash-on");
+    btn.title = "Flash: ON";
+    btn.textContent = "⚡";
+  } else {
+    btn.classList.add("flash-off");
+    btn.title = "Flash: OFF";
+    btn.textContent = "⚡";
+  }
 }
 
 /* ─── main image processing pipeline ─── */
@@ -710,12 +792,85 @@ function applyDustTexture(ctx, w, h) {
 
 }
 
-/* ─── gallery ─── */
+/* ─────────────────────────────────────────────
+   BACKGROUND UPLOAD QUEUE
+   Tamu jepret = instant, tidak ada waiting.
+   Upload berjalan satu per satu di background,
+   tanpa mengganggu kamera sama sekali.
+───────────────────────────────────────────── */
+const uploadQueue   = [];   // antrian foto yang belum diupload
+let   uploadBusy    = false; // sedang upload 1 foto
+let   uploadedCount = 0;     // berapa yang sudah berhasil
+
+/* dipanggil setiap foto baru masuk */
 function addPhoto(url) {
   photos.unshift(url);
   renderCounter();
   renderGallery();
   document.getElementById("gallery").classList.add("open");
+
+  // Masukkan ke antrian — tidak await, tidak blocking
+  const filename = `snap-${Date.now()}.jpg`;
+  uploadQueue.push({ url, filename, photoIndex: photos.length - 1 });
+  drainQueue(); // jalankan antrian kalau belum jalan
+}
+
+/* proses antrian satu per satu — tidak pernah blok UI */
+async function drainQueue() {
+  if (uploadBusy || uploadQueue.length === 0) return;
+  uploadBusy = true;
+
+  const item = uploadQueue.shift();
+  try {
+    const ok = await uploadToGDrive(item.url, item.filename);
+    if (ok) {
+      uploadedCount++;
+      markThumbStatus(item.photoIndex, 'ok');
+    } else {
+      markThumbStatus(item.photoIndex, 'fail');
+      // Retry sekali setelah 5 detik
+      setTimeout(() => {
+        uploadQueue.push(item);
+        drainQueue();
+      }, 5000);
+    }
+  } catch (e) {
+    console.warn('Queue error:', e.message);
+  }
+
+  uploadBusy = false;
+  drainQueue(); // proses item berikutnya kalau ada
+}
+
+/* returns true = sukses, false = gagal */
+async function uploadToGDrive(imageDataUrl, filename) {
+  try {
+    const response = await fetch('/api/upload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: imageDataUrl, filename }),
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      console.warn('Upload failed:', err.detail || err.error || response.status);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.warn('Upload network error:', e.message);
+    return false;
+  }
+}
+
+/* tandai thumb di galeri dengan dot kecil */
+function markThumbStatus(photoIndex, status) {
+  const thumbs = document.querySelectorAll('.thumb');
+  // photos array dibalik (terbaru di depan), jadi index galeri = kebalikannya
+  const thumbIdx = photoIndex;
+  if (thumbIdx >= 0 && thumbIdx < thumbs.length) {
+    thumbs[thumbIdx].style.outline =
+      status === 'ok' ? '2px solid #1fb6a6' : '2px solid #e0533d';
+  }
 }
 
 function renderCounter() {
@@ -771,6 +926,12 @@ document.getElementById("btnShutter").onclick = capture;
 document.getElementById("btnFlip").onclick = () => {
   facingMode = facingMode === "user" ? "environment" : "user";
   startCamera();
+};
+
+document.getElementById("btnFlash").onclick = () => {
+  if (!torchSupported) return; // silently do nothing on iOS
+  flashMode = flashMode === "on" ? "off" : "on";
+  updateFlashBtn();
 };
 
 document.getElementById("btnGallery").onclick = () => {
