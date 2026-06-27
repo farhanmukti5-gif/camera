@@ -278,18 +278,18 @@
 ───────────────────────────────────────────── */
 const LOOK = {
   // ──── TONE & EXPOSURE ────
-  exposure:     0.12,   // overall brightness: -0.5 to +0.5
-  highlights:   -0.20,   // bright area boost: -0.3 to +0.3
-  shadows:      0.21,   // dark area boost: -0.3 to +0.3
+  exposure:     0.00,   // overall brightness: -0.5 to +0.5
+  highlights:   0.00,   // bright area boost: -0.3 to +0.3
+  shadows:      0.00,   // dark area boost: -0.3 to +0.3
   fade:         0.00,   // wash out whites: 0 to 1.0
-  contrast:     0.22,
+  contrast:     0.10,
 
   // ──── COLOR ────
-  saturation:   0.2,
-  warmth:       2.5,      // -50 to +50, warm=orange, cool=blue
-  tint:         0.03,   // color cast: -1 to +1 (magenta to green)
+  saturation:  -0.08,
+  warmth:       6,      // -50 to +50, warm=orange, cool=blue
+  tint:         0.00,   // color cast: -1 to +1 (magenta to green)
   tintColor:    'none', // 'none', 'magenta', 'cyan', 'yellow', 'green'
-  vibrance:     0.03,   // smart saturation: -0.5 to +0.5
+  vibrance:     0.00,   // smart saturation: -0.5 to +0.5
 
   // ──── TONE DETAIL ────
   blackLift:    10,
@@ -297,12 +297,12 @@ const LOOK = {
   shGreen:      0.025,
 
   // ──── GRAIN & TEXTURE ────
-  grain:        45,     // luminance grain
+  grain:        18,     // luminance grain
   colorGrain:   0.00,   // per-channel grain: 0 (off) to 1.0
   dustTexture:  0.00,   // dust overlay: 0 (off) to 1.0
 
   // ──── DETAIL & SOFTNESS ────
-  clarity:      -0.1,   // micro-contrast: -0.5 to +0.5
+  clarity:      0.00,   // micro-contrast: -0.5 to +0.5
   softness:     0.00,   // bloom/glow: 0 (off) to 1.0
 
   // ──── VIGNETTE & BURN ────
@@ -332,7 +332,7 @@ const LOOK = {
   outputSize:   1600,
 
    // ── TONE CURVE ──
-  curve: [[0,0],[64,55],[128,138],[192,210],[255,255]],
+  curve:  [[0,0],[83,50],[166,187],[255,255]],
   curveR: [[0,0],[255,255]],
   curveG: [[0,0],[255,255]],
   curveB: [[0,0],[255,255]],
@@ -418,6 +418,9 @@ function capture() {
   busy = true;
   triggerFlash(() => {
     processFrame(video, video.videoWidth, video.videoHeight, facingMode === "user");
+    /* iOS pauses the <video> when the main thread blocks during processing;
+       force it back to playing so the pause/stall overlay never appears. */
+    if (video.paused) { video.play().catch(() => {}); }
     busy = false;
   });
 }
@@ -497,6 +500,11 @@ function processFrame(src, sw, sh, mirror) {
   }
   ctx.drawImage(src, dx, dy, dw, dh);
   ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+  /* Frame is now safely copied into the canvas — the <video> is no longer
+     needed for this capture, so nudge it to keep playing during the heavy
+     pixel processing below (prevents the iOS pause/stall overlay). */
+  if (src === video && video.paused) { video.play().catch(() => {}); }
 
   /* ── per-pixel pass ── */
   const imgData = ctx.getImageData(0, 0, w, h);
@@ -656,6 +664,23 @@ function applyPixelGrade(imgData, w, h) {
   /* check if color mix is active (skip heavy HSL conversion if all zero) */
   const cmActive = Object.values(cm).some(c => c.hue !== 0 || c.sat !== 0 || c.lum !== 0);
 
+  /* Precompute active color entries ONCE (not per-pixel).
+     The old code called Object.entries() for every pixel — 2M allocations
+     per photo — which froze the main thread. */
+  let cmList = null;
+  if (cmActive) {
+    const centers = { red:0, orange:30, yellow:60, green:120, cyan:180, blue:240, purple:280, magenta:320 };
+    const widths  = { red:30, orange:30, yellow:30, green:40, cyan:35, blue:40, purple:35, magenta:35 };
+    cmList = [];
+    for (const key in cm) {
+      const c = cm[key];
+      if (c.hue !== 0 || c.sat !== 0 || c.lum !== 0) {
+        cmList.push({ center: centers[key], width: widths[key], hue: c.hue, sat: c.sat, lum: c.lum });
+      }
+    }
+    if (cmList.length === 0) cmList = null;
+  }
+
   /* chromatic aberration source copy */
   const src = ca > 0 ? new Uint8ClampedArray(d) : null;
 
@@ -733,10 +758,13 @@ function applyPixelGrade(imgData, w, h) {
         if (sh !== 0) { const f = 1 + sh * 0.3; r *= f; g *= f; b *= f; }
       }
 
-      /* clamp before curve (curve expects 0-255 input) */
-      r = Math.max(0, Math.min(255, r));
-      g = Math.max(0, Math.min(255, g));
-      b = Math.max(0, Math.min(255, b));
+      /* clamp + ROUND to integer.
+         LUT arrays can only be indexed by integers — a float index like
+         lut[127.6] returns undefined, which becomes 0 (black). This single
+         missing Math.round was turning every photo black. */
+      r = Math.max(0, Math.min(255, Math.round(r)));
+      g = Math.max(0, Math.min(255, Math.round(g)));
+      b = Math.max(0, Math.min(255, Math.round(b)));
 
       /* ── TONE CURVES ── */
       r = lutR[lutRGB[r]];
@@ -744,21 +772,27 @@ function applyPixelGrade(imgData, w, h) {
       b = lutB[lutRGB[b]];
 
       /* ── COLOR MIX (HSL per-color) ── */
-      if (cmActive) {
-        const [h, s, l] = rgbToHsl(r, g, b);
-        const w = hueWeights(h);
+      if (cmList) {
+        const hsl = rgbToHsl(r, g, b);
+        const hh = hsl[0], ss = hsl[1], ll = hsl[2];
         let dH = 0, dS = 0, dL = 0;
-        for (const [key, wt] of Object.entries(w)) {
-          if (wt > 0 && cm[key]) {
-            dH += wt * cm[key].hue * 0.5;      // max ±50 degrees hue shift
-            dS += wt * cm[key].sat / 100;       // -1 to +1
-            dL += wt * cm[key].lum / 200;       // -0.5 to +0.5
+        for (let k = 0; k < cmList.length; k++) {
+          const cc = cmList[k];
+          let diff = Math.abs(hh - cc.center);
+          if (diff > 180) diff = 360 - diff;       /* wrap-around (red near 0/360) */
+          const n = diff / cc.width;
+          const wt = n < 1 ? 1 - n * n : 0;
+          if (wt > 0) {
+            dH += wt * cc.hue * 0.5;
+            dS += wt * cc.sat / 100;
+            dL += wt * cc.lum / 200;
           }
         }
-        const newH = ((h + dH) % 360 + 360) % 360;
-        const newS = Math.max(0, Math.min(1, s + dS));
-        const newL = Math.max(0, Math.min(1, l + dL));
-        [r, g, b] = hslToRgb(newH, newS, newL);
+        const newH = ((hh + dH) % 360 + 360) % 360;
+        const newS = Math.max(0, Math.min(1, ss + dS));
+        const newL = Math.max(0, Math.min(1, ll + dL));
+        const out = hslToRgb(newH, newS, newL);
+        r = out[0]; g = out[1]; b = out[2];
       }
 
       /* grain (luminance + color) */
