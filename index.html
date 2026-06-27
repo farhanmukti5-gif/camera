@@ -278,18 +278,18 @@
 ───────────────────────────────────────────── */
 const LOOK = {
   // ──── TONE & EXPOSURE ────
-  exposure:     0.00,   // overall brightness: -0.5 to +0.5
-  highlights:   0.00,   // bright area boost: -0.3 to +0.3
-  shadows:      0.00,   // dark area boost: -0.3 to +0.3
+  exposure:     0.12,   // overall brightness: -0.5 to +0.5
+  highlights:   -0.20,   // bright area boost: -0.3 to +0.3
+  shadows:      0.21,   // dark area boost: -0.3 to +0.3
   fade:         0.00,   // wash out whites: 0 to 1.0
   contrast:     0.10,
 
   // ──── COLOR ────
-  saturation:  -0.08,
+  saturation:  -0.04,
   warmth:       6,      // -50 to +50, warm=orange, cool=blue
-  tint:         0.00,   // color cast: -1 to +1 (magenta to green)
+  tint:         0.03,   // color cast: -1 to +1 (magenta to green)
   tintColor:    'none', // 'none', 'magenta', 'cyan', 'yellow', 'green'
-  vibrance:     0.00,   // smart saturation: -0.5 to +0.5
+  vibrance:     0.03,   // smart saturation: -0.5 to +0.5
 
   // ──── TONE DETAIL ────
   blackLift:    10,
@@ -297,12 +297,12 @@ const LOOK = {
   shGreen:      0.025,
 
   // ──── GRAIN & TEXTURE ────
-  grain:        18,     // luminance grain
+  grain:        45,     // luminance grain
   colorGrain:   0.00,   // per-channel grain: 0 (off) to 1.0
   dustTexture:  0.00,   // dust overlay: 0 (off) to 1.0
 
   // ──── DETAIL & SOFTNESS ────
-  clarity:      0.00,   // micro-contrast: -0.5 to +0.5
+  clarity:      -0.10,   // micro-contrast: -0.5 to +0.5
   softness:     0.00,   // bloom/glow: 0 (off) to 1.0
 
   // ──── VIGNETTE & BURN ────
