@@ -278,26 +278,26 @@
 ───────────────────────────────────────────── */
 const LOOK = {
   // ──── TONE & EXPOSURE ────
-  exposure:     -0.08,   // overall brightness: -0.5 to +0.5
-  highlights:   -0.09,   // bright area boost: -0.3 to +0.3
-  shadows:      0.11,   // dark area boost: -0.3 to +0.3
-  fade:         0.24,   // wash out whites: 0 to 1.0
-  contrast:     -0.26,
+  exposure:     -0.05,   // overall brightness: -0.5 to +0.5
+  highlights:   -0.12,   // bright area boost: -0.3 to +0.3
+  shadows:      0.14,   // dark area boost: -0.3 to +0.3
+  fade:         0.06,   // wash out whites: 0 to 1.0
+  contrast:     0.08,
 
   // ──── COLOR ────
-  saturation:   0.15,
-  warmth:       10,      // -50 to +50, warm=orange, cool=blue
+  saturation:   0.08,
+  warmth:       14,      // -50 to +50, warm=orange, cool=blue
   tint:         0.17,   // color cast: -1 to +1 (magenta to green)
   tintColor:    'none', // 'none', 'magenta', 'cyan', 'yellow', 'green'
-  vibrance:     0.1,   // smart saturation: -0.5 to +0.5
+  vibrance:     0.12,   // smart saturation: -0.5 to +0.5
 
   // ──── TONE DETAIL ────
-  blackLift:    0,
-  hlWarm:       0.015,
-  shGreen:      0.025,
+  blackLift:    6,
+  hlWarm:       0.020,
+  shGreen:      0.030,
 
   // ──── GRAIN & TEXTURE ────
-  grain:        43,     // luminance grain
+  grain:        12,     // luminance grain
   colorGrain:   0.00,   // per-channel grain: 0 (off) to 1.0
   dustTexture:  0.00,   // dust overlay: 0 (off) to 1.0
 
@@ -306,7 +306,7 @@ const LOOK = {
   softness:     0.00,   // bloom/glow: 0 (off) to 1.0
 
   // ──── VIGNETTE & BURN ────
-  vignette:     0.0,
+  vignette:     0.12,
   filmBurn:     0.00,   // darkened edges: 0 (off) to 1.0
 
   // ──── LENS ────
@@ -332,21 +332,21 @@ const LOOK = {
   outputSize:   1600,
 
   // ── TONE CURVE ──
-  curve:  [[0,0],[34,46],[138,136],[181,199],[216,223],[255,255]],
+  curve:  [[0,0],[60,54],[128,128],[195,200],[255,250]],
   curveR: [[0,0],[255,255]],
   curveG: [[0,0],[255,255]],
   curveB: [[0,0],[255,255]],
 
   // ── COLOR MIX ──
   colorMix: {
-    red     : { hue: 10, sat: -15, lum: 0 },
-    orange  : { hue: -13, sat: -13, lum: 13 },
-    yellow  : { hue: 0, sat: -25, lum: 11 },
-    green   : { hue: 18, sat: 37, lum: 0 },
-    cyan    : { hue: 0, sat: -14, lum: 0 },
-    blue    : { hue: 0, sat: 14, lum: 29 },
-    purple  : { hue: 0, sat: -22, lum: 0 },
-    magenta : { hue: -9, sat: -15, lum: 0 },
+    red     : { hue: 0, sat: 0, lum: 0 },
+    orange  : { hue: -5, sat: 8, lum: 5 },
+    yellow  : { hue: 0, sat: 5, lum: 11 },
+    green   : { hue: 12, sat: -10, lum: 0 },
+    cyan    : { hue: 0, sat: -8, lum: 0 },
+    blue    : { hue: 0, sat: 0, lum: 0 },
+    purple  : { hue: 0, sat: 0, lum: 0 },
+    magenta : { hue: 0, sat: 0, lum: 0 },
   },
 };
 
